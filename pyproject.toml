@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "villaz-cli"
+version = "0.1.0"
+description = "Cliente interativo de terminal first-party para o Villaz-Lab Router"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    { name = "Leandro Vilela" },
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Natural Language :: Portuguese (Brazilian)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Terminals",
+]
+dependencies = [
+    "typer==0.27.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build==1.6.0",
+    "pytest==9.1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/leovillaz/villaz-cli"
+Repository = "https://github.com/leovillaz/villaz-cli"
+Issues = "https://github.com/leovillaz/villaz-cli/issues"
+
+[project.scripts]
+villaz = "villaz_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
