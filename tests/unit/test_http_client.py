@@ -80,3 +80,31 @@ def test_send_prompt_rejects_invalid_success_contract() -> None:
             "Revise código",
             transport=httpx.MockTransport(handler),
         )
+
+def test_send_prompt_includes_explicit_profile_when_selected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {
+            "message": "Teste",
+            "explicit_profile": "code-review-security",
+        }
+
+        return httpx.Response(
+            200,
+            json={
+                "response": "OK",
+                "profile": "code-review-security",
+                "model": "qwen2.5-coder:14b",
+                "state": "explicit",
+                "route_id": None,
+            },
+        )
+
+    result = send_prompt(
+        "Teste",
+        explicit_profile="code-review-security",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert result.state == "explicit"
+    assert result.profile == "code-review-security"
+    assert result.route_id is None

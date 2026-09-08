@@ -26,7 +26,9 @@ Opções:
 --version  Exibe a versão e encerra.
 
 No modo interativo:
- /exit     Encerra o Villaz-Lab CLI.
+ /profile <id>   Seleciona um profile explícito.
+ /profile auto   Retorna ao roteamento automático.
+ /exit           Encerra o Villaz-Lab CLI.
 """
 
 app = typer.Typer(
@@ -90,6 +92,8 @@ def _show_api_error(error: RouterAPIError) -> None:
 
 
 def _interactive_shell() -> None:
+    explicit_profile: str | None = None
+
     typer.echo(f"Villaz-Lab CLI {_installed_version()}")
     typer.echo("Router: http://127.0.0.1:8000")
     typer.echo("Modo: auto")
@@ -112,8 +116,35 @@ def _interactive_shell() -> None:
         if message == "/exit":
             return
 
+        parts = message.split(maxsplit=1)
+
+        if parts[0] == "/profile":
+            if len(parts) == 1:
+                typer.echo()
+                typer.echo("Uso: /profile <id> ou /profile auto")
+                typer.echo()
+                continue
+
+            requested_profile = parts[1]
+
+            if requested_profile == "auto":
+                explicit_profile = None
+                typer.echo()
+                typer.echo("Modo alterado para: auto")
+                typer.echo()
+                continue
+
+            explicit_profile = requested_profile
+            typer.echo()
+            typer.echo(f"Profile ativo: {explicit_profile}")
+            typer.echo()
+            continue
+
         try:
-            result = send_prompt(message)
+            result = send_prompt(
+                message,
+                explicit_profile=explicit_profile,
+            )
         except RouterAPIError as exc:
             _show_api_error(exc)
             continue
@@ -124,7 +155,6 @@ def _interactive_shell() -> None:
             continue
 
         _show_result(result)
-
 
 @app.command()
 def entrypoint(

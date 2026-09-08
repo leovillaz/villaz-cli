@@ -93,6 +93,7 @@ def _parse_error(payload: Any) -> RouterAPIError | None:
 def send_prompt(
     message: str,
     *,
+    explicit_profile: str | None = None,
     base_url: str = DEFAULT_ROUTER_URL,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     transport: httpx.BaseTransport | None = None,
@@ -103,10 +104,16 @@ def send_prompt(
             timeout=timeout,
             transport=transport,
         ) as client:
+            payload: dict[str, str] = {"message": message}
+
+            if explicit_profile is not None:
+                payload["explicit_profile"] = explicit_profile
+
             response = client.post(
                 "/v1/prompt",
-                json={"message": message},
+                json=payload,
             )
+
     except httpx.RequestError as exc:
         raise RouterConnectionError(
             f"Não foi possível conectar ao Router em {base_url}."

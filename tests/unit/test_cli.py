@@ -25,6 +25,8 @@ def test_help_returns_static_text_without_starting_shell(monkeypatch) -> None:
     assert "--help" in result.stdout
     assert "--version" in result.stdout
     assert "/exit" in result.stdout
+    assert "/profile <id>" in result.stdout
+    assert "/profile auto" in result.stdout
     assert "Router:" not in result.stdout
     assert "install-completion" not in result.stdout
     assert "show-completion" not in result.stdout
@@ -68,8 +70,14 @@ def test_empty_line_is_silently_discarded(monkeypatch) -> None:
 def test_regular_text_calls_router_and_displays_result(monkeypatch) -> None:
     received: list[str] = []
 
-    def fake_send_prompt(message: str) -> PromptResult:
+    def fake_send_prompt(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        assert explicit_profile is None
         received.append(message)
+
         return PromptResult(
             response="VILLAZ-CLI-OK",
             profile="code-review-security",
@@ -95,9 +103,12 @@ def test_regular_text_calls_router_and_displays_result(monkeypatch) -> None:
     assert "[resposta]" in result.stdout
     assert "VILLAZ-CLI-OK" in result.stdout
 
-
 def test_unrouted_is_presented_without_raw_json(monkeypatch) -> None:
-    def fake_send_prompt(message: str) -> PromptResult:
+    def fake_send_prompt(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
         raise RouterAPIError(
             code="UNROUTED",
             message="The request could not be routed.",
@@ -145,3 +156,127 @@ def test_keyboard_interrupt_finishes_without_traceback(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "Traceback" not in result.stdout
     assert result.exception is None
+def test_profile_command_selects_explicit_profile(monkeypatch) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_send_prompt(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        calls.append((message, explicit_profile))
+        return PromptResult(
+            response="OK",
+            profile="code-review-security",
+            model="qwen2.5-coder:14b",
+            state="explicit",
+            route_id=None,
+        )
+
+    monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
+
+    result = runner.invoke(
+        cli.app,
+        input=(
+            "/profile code-review-security\n"
+            "Teste\n"
+            "/exit\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Profile ativo: code-review-security" in result.stdout
+    assert calls == [
+        ("Teste", "code-review-security")
+    ]
+    assert "estado:  explicit" in result.stdout
+    assert "rota:    -" in result.stdout
+
+
+def test_profile_auto_returns_to_automatic_mode(monkeypatch) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_send_prompt(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        calls.append((message, explicit_profile))
+        return PromptResult(
+            response="OK",
+            profile="code-review-security",
+            model="qwen2.5-coder:14b",
+            state="routed",
+            route_id="ROUTE-REVIEW-001",
+        )
+
+    monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
+
+    result = runner.invoke(
+        cli.app,
+        input=(
+            "/profile code-review-security\n"
+            "/profile auto\n"
+            "Faça revisão de segurança\n"
+            "/exit\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Modo alterado para: auto" in result.stdout
+    assert calls == [
+        ("Faça revisão de segurança", None)
+    ]
+
+
+def test_profile_without_argument_shows_usage_without_calling_router(
+    monkeypatch,
+) -> None:
+    def fail_if_called(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        raise AssertionError(
+            "/profile sem argumento não deve acessar o Router"
+        )
+
+    monkeypatch.setattr(cli, "send_prompt", fail_if_called)
+
+    result = runner.invoke(
+        cli.app,
+        input="/profile\n/exit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Uso: /profile <id> ou /profile auto" in result.stdout
+
+def test_profiles_is_not_interpreted_as_profile_command(
+    monkeypatch,
+) -> None:
+    received: list[str] = []
+
+    def fake_send_prompt(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        received.append(message)
+
+        return PromptResult(
+            response="OK",
+            profile="code-review-security",
+            model="qwen2.5-coder:14b",
+            state="routed",
+            route_id="ROUTE-REVIEW-001",
+        )
+
+    monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
+
+    result = runner.invoke(
+        cli.app,
+        input="/profiles\n/exit\n",
+    )
+
+    assert result.exit_code == 0
+    assert received == ["/profiles"]
