@@ -6,7 +6,9 @@ from villaz_cli.http_client import (
     PromptResult,
     RouterAPIError,
     RouterProtocolError,
+    HealthResult,
     send_prompt,
+    get_health,
 )
 
 
@@ -108,3 +110,76 @@ def test_send_prompt_includes_explicit_profile_when_selected() -> None:
     assert result.state == "explicit"
     assert result.profile == "code-review-security"
     assert result.route_id is None
+
+def test_get_health_requests_live_and_ready_and_parses_success() -> None:
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+
+        if request.url.path == "/health/live":
+            return httpx.Response(
+                200,
+                json={"status": "alive"},
+            )
+
+        if request.url.path == "/health/ready":
+            return httpx.Response(
+                200,
+                json={"status": "ready"},
+            )
+
+        raise AssertionError(
+            f"endpoint inesperado: {request.url.path}"
+        )
+
+    result = get_health(
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert requested_paths == [
+        "/health/live",
+        "/health/ready",
+    ]
+    assert result == HealthResult(
+        live="alive",
+        ready="ready",
+    )
+
+
+def test_get_health_rejects_unexpected_live_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(
+                200,
+                json={"status": "unexpected"},
+            )
+
+        return httpx.Response(
+            200,
+            json={"status": "ready"},
+        )
+
+    with pytest.raises(RouterProtocolError):
+        get_health(
+            transport=httpx.MockTransport(handler),
+        )
+
+
+def test_get_health_rejects_http_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(
+                503,
+                json={"status": "unavailable"},
+            )
+
+        return httpx.Response(
+            200,
+            json={"status": "ready"},
+        )
+
+    with pytest.raises(RouterProtocolError):
+        get_health(
+            transport=httpx.MockTransport(handler),
+        )

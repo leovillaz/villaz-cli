@@ -37,6 +37,31 @@ class PromptResult:
     state: str
     route_id: str | None
 
+@dataclass(frozen=True, slots=True)
+class HealthResult:
+    live: str
+    ready: str
+
+
+def _parse_health_response(
+    payload: Any,
+    *,
+    expected_status: str,
+) -> str:
+    if not isinstance(payload, dict):
+        raise RouterProtocolError(
+            "Resposta inválida do Router: JSON inesperado."
+        )
+
+    status = payload.get("status")
+
+    if status != expected_status:
+        raise RouterProtocolError(
+            "Resposta inválida do Router: status de health inesperado."
+        )
+
+    return status
+
 
 def _require_string(payload: dict[str, Any], field: str) -> str:
     value = payload.get(field)
@@ -89,6 +114,54 @@ def _parse_error(payload: Any) -> RouterAPIError | None:
 
     return RouterAPIError(code=code, message=message)
 
+
+def get_health(
+    *,
+    base_url: str = DEFAULT_ROUTER_URL,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    transport: httpx.BaseTransport | None = None,
+) -> HealthResult:
+    try:
+        with httpx.Client(
+            base_url=base_url,
+            timeout=timeout,
+            transport=transport,
+        ) as client:
+            live_response = client.get("/health/live")
+            ready_response = client.get("/health/ready")
+    except httpx.RequestError as exc:
+        raise RouterConnectionError(
+            f"Não foi possível conectar ao Router em {base_url}."
+        ) from exc
+
+    try:
+        live_payload = live_response.json()
+        ready_payload = ready_response.json()
+    except ValueError as exc:
+        raise RouterProtocolError(
+            "O Router retornou uma resposta de health inválida."
+        ) from exc
+
+    if live_response.is_error:
+        raise RouterProtocolError(
+            f"O Router respondeu com HTTP {live_response.status_code} em /health/live."
+        )
+
+    if ready_response.is_error:
+        raise RouterProtocolError(
+            f"O Router respondeu com HTTP {ready_response.status_code} em /health/ready."
+        )
+
+    return HealthResult(
+        live=_parse_health_response(
+            live_payload,
+            expected_status="alive",
+        ),
+        ready=_parse_health_response(
+            ready_payload,
+            expected_status="ready",
+        ),
+    )
 
 def send_prompt(
     message: str,

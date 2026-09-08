@@ -4,9 +4,14 @@ from typing import Annotated
 import typer
 
 from villaz_cli.http_client import (
+    DEFAULT_ROUTER_URL,
+    HealthResult,
     PromptResult,
     RouterAPIError,
     RouterClientError,
+    RouterConnectionError,
+    RouterProtocolError,
+    get_health,
     send_prompt,
 )
 
@@ -26,6 +31,10 @@ Opções:
 --version  Exibe a versão e encerra.
 
 No modo interativo:
+ /profile <id>   Seleciona um profile explícito.
+ /profile auto   Retorna ao roteamento automático.
+ /health         Verifica a saúde do Router.
+ /status         Mostra endpoint, modo e saúde do Router.
  /profile <id>   Seleciona um profile explícito.
  /profile auto   Retorna ao roteamento automático.
  /exit           Encerra o Villaz-Lab CLI.
@@ -90,6 +99,27 @@ def _show_api_error(error: RouterAPIError) -> None:
 
     typer.echo()
 
+def _show_health() -> None:
+    health = get_health()
+
+    typer.echo()
+    typer.echo("[health]")
+    typer.echo(f"live:  {health.live}")
+    typer.echo(f"ready: {health.ready}")
+    typer.echo()
+
+
+def _show_status(explicit_profile: str | None) -> None:
+    health = get_health()
+    mode = explicit_profile if explicit_profile is not None else "auto"
+
+    typer.echo()
+    typer.echo("[status]")
+    typer.echo(f"router: {DEFAULT_ROUTER_URL}")
+    typer.echo(f"modo:   {mode}")
+    typer.echo(f"live:   {health.live}")
+    typer.echo(f"ready:  {health.ready}")
+    typer.echo()
 
 def _interactive_shell() -> None:
     explicit_profile: str | None = None
@@ -115,6 +145,34 @@ def _interactive_shell() -> None:
 
         if message == "/exit":
             return
+
+        if message == "/health":
+            try:
+                _show_health()
+            except RouterConnectionError as exc:
+                typer.echo()
+                typer.echo(f"Erro: {exc}")
+                typer.echo()
+            except RouterProtocolError as exc:
+                typer.echo()
+                typer.echo(f"Erro: {exc}")
+                typer.echo()
+
+            continue
+
+        if message == "/status":
+            try:
+                _show_status(explicit_profile)
+            except RouterConnectionError as exc:
+                typer.echo()
+                typer.echo(f"Erro: {exc}")
+                typer.echo()
+            except RouterProtocolError as exc:
+                typer.echo()
+                typer.echo(f"Erro: {exc}")
+                typer.echo()
+
+            continue
 
         parts = message.split(maxsplit=1)
 

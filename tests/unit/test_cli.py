@@ -27,6 +27,8 @@ def test_help_returns_static_text_without_starting_shell(monkeypatch) -> None:
     assert "/exit" in result.stdout
     assert "/profile <id>" in result.stdout
     assert "/profile auto" in result.stdout
+    assert "/health" in result.stdout
+    assert "/status" in result.stdout
     assert "Router:" not in result.stdout
     assert "install-completion" not in result.stdout
     assert "show-completion" not in result.stdout
@@ -280,3 +282,68 @@ def test_profiles_is_not_interpreted_as_profile_command(
 
     assert result.exit_code == 0
     assert received == ["/profiles"]
+
+def test_health_command_displays_live_and_ready(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_health",
+        lambda: cli.HealthResult(
+            live="alive",
+            ready="ready",
+        ),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        input="/health\n/exit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "[health]" in result.stdout
+    assert "live:  alive" in result.stdout
+    assert "ready: ready" in result.stdout
+
+
+def test_status_command_displays_auto_mode(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_health",
+        lambda: cli.HealthResult(
+            live="alive",
+            ready="ready",
+        ),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        input="/status\n/exit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "[status]" in result.stdout
+    assert "modo:   auto" in result.stdout
+    assert "live:   alive" in result.stdout
+    assert "ready:  ready" in result.stdout
+
+
+def test_status_command_displays_explicit_profile(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_health",
+        lambda: cli.HealthResult(
+            live="alive",
+            ready="ready",
+        ),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        input=(
+            "/profile code-review-security\n"
+            "/status\n"
+            "/exit\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "modo:   code-review-security" in result.stdout
