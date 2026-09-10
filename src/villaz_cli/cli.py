@@ -1,7 +1,9 @@
+import time
 from importlib import metadata
 from typing import Annotated
 
 import typer
+
 
 from villaz_cli.http_client import (
     DEFAULT_ROUTER_URL,
@@ -63,13 +65,20 @@ def _show_version(value: bool) -> None:
         raise typer.Exit(code=0)
 
 
-def _show_result(result: PromptResult) -> None:
+def _show_result(
+    result: PromptResult,
+    *,
+    elapsed_seconds: float,
+) -> None:
     typer.echo()
     typer.echo("[router]")
     typer.echo(f"estado:  {result.state}")
     typer.echo(f"profile: {result.profile}")
     typer.echo(f"modelo:  {result.model}")
     typer.echo(f"rota:    {result.route_id or '-'}")
+    typer.echo(f"tempo:   {elapsed_seconds:.2f}s")
+    typer.echo(f"tokens:  {result.output_tokens}")
+    typer.echo(f"veloc.:  {result.tokens_per_second:.2f} tok/s")
     typer.echo()
     typer.echo("[resposta]")
     typer.echo(result.response)
@@ -198,6 +207,8 @@ def _interactive_shell() -> None:
             typer.echo()
             continue
 
+        started_at = time.perf_counter()
+
         try:
             result = send_prompt(
                 message,
@@ -211,8 +222,9 @@ def _interactive_shell() -> None:
             typer.echo(f"Falha ao acessar o Router: {exc}")
             typer.echo()
             continue
+        elapsed_seconds = time.perf_counter() - started_at
+        _show_result(result, elapsed_seconds=elapsed_seconds)
 
-        _show_result(result)
 
 @app.command()
 def entrypoint(

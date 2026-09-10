@@ -28,6 +28,11 @@ def test_send_prompt_posts_expected_contract_and_parses_success() -> None:
                 "model": "qwen2.5-coder:14b",
                 "state": "routed",
                 "route_id": "ROUTE-REVIEW-001",
+                "metrics": {
+                    "output_tokens": 42,
+                    "generation_duration_ns": 1_500_000_000,
+                    "tokens_per_second": 28.0,
+                },
             },
         )
 
@@ -42,6 +47,9 @@ def test_send_prompt_posts_expected_contract_and_parses_success() -> None:
         model="qwen2.5-coder:14b",
         state="routed",
         route_id="ROUTE-REVIEW-001",
+        output_tokens=42,
+        generation_duration_ns=1_500_000_000,
+        tokens_per_second=28.0,
     )
 
 
@@ -83,6 +91,67 @@ def test_send_prompt_rejects_invalid_success_contract() -> None:
             transport=httpx.MockTransport(handler),
         )
 
+
+def test_send_prompt_rejects_missing_metrics() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "response": "Resposta",
+                "profile": "code-review-security",
+                "model": "qwen2.5-coder:14b",
+                "state": "routed",
+                "route_id": "ROUTE-REVIEW-001",
+            },
+        )
+
+    with pytest.raises(RouterProtocolError):
+        send_prompt(
+            "Revise código",
+            transport=httpx.MockTransport(handler),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("output_tokens", True),
+        ("output_tokens", 42.0),
+        ("generation_duration_ns", "1500000000"),
+        ("tokens_per_second", 28),
+    ],
+)
+def test_send_prompt_rejects_invalid_metric_types(
+    field_name: str,
+    invalid_value: object,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        metrics: dict[str, object] = {
+            "output_tokens": 42,
+            "generation_duration_ns": 1_500_000_000,
+            "tokens_per_second": 28.0,
+        }
+        metrics[field_name] = invalid_value
+
+        return httpx.Response(
+            200,
+            json={
+                "response": "Resposta",
+                "profile": "code-review-security",
+                "model": "qwen2.5-coder:14b",
+                "state": "routed",
+                "route_id": "ROUTE-REVIEW-001",
+                "metrics": metrics,
+            },
+        )
+
+    with pytest.raises(RouterProtocolError):
+        send_prompt(
+            "Revise código",
+            transport=httpx.MockTransport(handler),
+        )
+
+
 def test_send_prompt_includes_explicit_profile_when_selected() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert json.loads(request.content) == {
@@ -98,6 +167,11 @@ def test_send_prompt_includes_explicit_profile_when_selected() -> None:
                 "model": "qwen2.5-coder:14b",
                 "state": "explicit",
                 "route_id": None,
+                "metrics": {
+                    "output_tokens": 2,
+                    "generation_duration_ns": 25_000_000,
+                    "tokens_per_second": 80.0,
+                },
             },
         )
 

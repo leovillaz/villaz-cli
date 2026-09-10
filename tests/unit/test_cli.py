@@ -86,9 +86,20 @@ def test_regular_text_calls_router_and_displays_result(monkeypatch) -> None:
             model="qwen2.5-coder:14b",
             state="routed",
             route_id="ROUTE-REVIEW-001",
+            output_tokens=42,
+            generation_duration_ns=1_500_000_000,
+            tokens_per_second=28.0,
         )
 
     monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
+
+    perf_counter_values = iter([100.0, 103.25])
+
+    monkeypatch.setattr(
+        cli.time,
+        "perf_counter",
+        lambda: next(perf_counter_values),
+    )
 
     result = runner.invoke(
         cli.app,
@@ -103,6 +114,9 @@ def test_regular_text_calls_router_and_displays_result(monkeypatch) -> None:
     assert "modelo:  qwen2.5-coder:14b" in result.stdout
     assert "rota:    ROUTE-REVIEW-001" in result.stdout
     assert "[resposta]" in result.stdout
+    assert "tokens:  42" in result.stdout
+    assert "veloc.:  28.00 tok/s" in result.stdout
+    assert "tempo:   3.25s" in result.stdout
     assert "VILLAZ-CLI-OK" in result.stdout
 
 def test_unrouted_is_presented_without_raw_json(monkeypatch) -> None:
@@ -173,6 +187,9 @@ def test_profile_command_selects_explicit_profile(monkeypatch) -> None:
             model="qwen2.5-coder:14b",
             state="explicit",
             route_id=None,
+            output_tokens=42,
+            generation_duration_ns=1_500_000_000,
+            tokens_per_second=28.0,
         )
 
     monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
@@ -210,6 +227,9 @@ def test_profile_auto_returns_to_automatic_mode(monkeypatch) -> None:
             model="qwen2.5-coder:14b",
             state="routed",
             route_id="ROUTE-REVIEW-001",
+            output_tokens=42,
+            generation_duration_ns=1_500_000_000,
+            tokens_per_second=28.0,
         )
 
     monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)
@@ -271,6 +291,9 @@ def test_profiles_is_not_interpreted_as_profile_command(
             model="qwen2.5-coder:14b",
             state="routed",
             route_id="ROUTE-REVIEW-001",
+            output_tokens=42,
+            generation_duration_ns=1_500_000_000,
+            tokens_per_second=28.0,
         )
 
     monkeypatch.setattr(cli, "send_prompt", fake_send_prompt)

@@ -36,6 +36,10 @@ class PromptResult:
     model: str
     state: str
     route_id: str | None
+    output_tokens: int
+    generation_duration_ns: int
+    tokens_per_second: float
+
 
 @dataclass(frozen=True, slots=True)
 class HealthResult:
@@ -72,6 +76,34 @@ def _require_string(payload: dict[str, Any], field: str) -> str:
     return value
 
 
+def _require_exact_int(
+    payload: dict[str, Any],
+    field: str,
+) -> int:
+    value = payload.get(field)
+
+    if type(value) is not int:
+        raise RouterProtocolError(
+            f"Resposta inválida do Router: campo '{field}' ausente ou inválido."
+        )
+
+    return value
+
+
+def _require_exact_float(
+    payload: dict[str, Any],
+    field: str,
+) -> float:
+    value = payload.get(field)
+
+    if type(value) is not float:
+        raise RouterProtocolError(
+            f"Resposta inválida do Router: campo '{field}' ausente ou inválido."
+        )
+
+    return value
+
+
 def _parse_success(payload: Any) -> PromptResult:
     if not isinstance(payload, dict):
         raise RouterProtocolError("Resposta inválida do Router: JSON inesperado.")
@@ -86,6 +118,25 @@ def _parse_success(payload: Any) -> PromptResult:
         raise RouterProtocolError(
             "Resposta inválida do Router: campo 'route_id' inválido."
         )
+    metrics = payload.get("metrics")
+
+    if not isinstance(metrics, dict):
+        raise RouterProtocolError(
+            "Resposta inválida do Router: campo 'metrics' ausente ou inválido."
+        )
+
+    output_tokens = _require_exact_int(
+        metrics,
+        "output_tokens",
+    )
+    generation_duration_ns = _require_exact_int(
+        metrics,
+        "generation_duration_ns",
+    )
+    tokens_per_second = _require_exact_float(
+        metrics,
+        "tokens_per_second",
+    )
 
     return PromptResult(
         response=response,
@@ -93,6 +144,9 @@ def _parse_success(payload: Any) -> PromptResult:
         model=model,
         state=state,
         route_id=route_id,
+        output_tokens=output_tokens,
+        generation_duration_ns=generation_duration_ns,
+        tokens_per_second=tokens_per_second,
     )
 
 
