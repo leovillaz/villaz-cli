@@ -1,5 +1,7 @@
 import importlib
 
+import pytest
+
 from typer.testing import CliRunner
 
 from villaz_cli import cli
@@ -7,6 +9,15 @@ from villaz_cli.http_client import PromptResult, RouterAPIError
 
 
 runner = CliRunner()
+@pytest.fixture(autouse=True)
+def healthy_router(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_health",
+        lambda: cli.HealthResult(live="alive", ready="ready"),
+    )
+
+
 
 
 def test_help_returns_static_text_without_starting_shell(monkeypatch) -> None:
@@ -52,10 +63,15 @@ def test_no_arguments_starts_shell_and_exit_finishes_normally() -> None:
     result = runner.invoke(cli.app, input="/exit\n")
 
     assert result.exit_code == 0
-    assert "Villaz-Lab CLI 0.1.0" in result.stdout
-    assert "Router: http://127.0.0.1:8000" in result.stdout
-    assert "Modo: auto" in result.stdout
-    assert "> " in result.stdout
+    assert "Villaz-Lab CLI" in result.stdout
+    assert "0.1.0" in result.stdout
+    assert "Router" in result.stdout
+    assert "http://127.0.0.1:8000" in result.stdout
+    assert "● online" in result.stdout
+    assert "Modo" in result.stdout
+    assert "auto" in result.stdout
+    assert "Digite uma mensagem ou /help" in result.stdout
+    assert "villaz > " in result.stdout
 
 
 def test_empty_line_is_silently_discarded(monkeypatch) -> None:
@@ -108,15 +124,22 @@ def test_regular_text_calls_router_and_displays_result(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert received == ["Faça uma revisão de segurança"]
-    assert "[router]" in result.stdout
-    assert "estado:  routed" in result.stdout
-    assert "profile: code-review-security" in result.stdout
-    assert "modelo:  qwen2.5-coder:14b" in result.stdout
-    assert "rota:    ROUTE-REVIEW-001" in result.stdout
+    assert "Execução" in result.stdout
+    assert "Estado" in result.stdout
+    assert "routed" in result.stdout
+    assert "Profile" in result.stdout
+    assert "code-review-security" in result.stdout
+    assert "Modelo" in result.stdout
+    assert "qwen2.5-coder:14b" in result.stdout
+    assert "Rota" in result.stdout
+    assert "ROUTE-REVIEW-001" in result.stdout
     assert "[resposta]" in result.stdout
-    assert "tokens:  42" in result.stdout
-    assert "veloc.:  28.00 tok/s" in result.stdout
-    assert "tempo:   3.25s" in result.stdout
+    assert "Tokens" in result.stdout
+    assert "42" in result.stdout
+    assert "Velocidade" in result.stdout
+    assert "28.00 tok/s" in result.stdout
+    assert "Tempo" in result.stdout
+    assert "3.25s" in result.stdout
     assert "VILLAZ-CLI-OK" in result.stdout
 
 def test_unrouted_is_presented_without_raw_json(monkeypatch) -> None:
@@ -204,12 +227,14 @@ def test_profile_command_selects_explicit_profile(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Profile ativo: code-review-security" in result.stdout
+    assert "✓ Profile ativo: code-review-security" in result.stdout
     assert calls == [
         ("Teste", "code-review-security")
     ]
-    assert "estado:  explicit" in result.stdout
-    assert "rota:    -" in result.stdout
+    assert "Estado" in result.stdout
+    assert "explicit" in result.stdout
+    assert "Rota" in result.stdout
+    assert "-" in result.stdout
 
 
 def test_profile_auto_returns_to_automatic_mode(monkeypatch) -> None:
@@ -245,7 +270,7 @@ def test_profile_auto_returns_to_automatic_mode(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Modo alterado para: auto" in result.stdout
+    assert "✓ Modo automático ativado." in result.stdout
     assert calls == [
         ("Faça revisão de segurança", None)
     ]
@@ -322,9 +347,11 @@ def test_health_command_displays_live_and_ready(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "[health]" in result.stdout
-    assert "live:  alive" in result.stdout
-    assert "ready: ready" in result.stdout
+    assert "Saúde do Router" in result.stdout
+    assert "Live" in result.stdout
+    assert "● online" in result.stdout
+    assert "Ready" in result.stdout
+    assert "✓ pronto" in result.stdout
 
 
 def test_status_command_displays_auto_mode(monkeypatch) -> None:
@@ -343,10 +370,19 @@ def test_status_command_displays_auto_mode(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "[status]" in result.stdout
-    assert "modo:   auto" in result.stdout
-    assert "live:   alive" in result.stdout
-    assert "ready:  ready" in result.stdout
+    assert "Status" in result.stdout
+    assert "Villaz-Lab Router" in result.stdout
+    assert "Endpoint" in result.stdout
+    assert "Router" in result.stdout
+    assert "http://127.0.0.1:8000" in result.stdout
+    assert "Modo" in result.stdout
+    assert "auto" in result.stdout
+    assert "Profile" in result.stdout
+    assert "automático" in result.stdout
+    assert "Live" in result.stdout
+    assert "● online" in result.stdout
+    assert "Ready" in result.stdout
+    assert "✓ pronto" in result.stdout
 
 
 def test_status_command_displays_explicit_profile(monkeypatch) -> None:
@@ -369,4 +405,105 @@ def test_status_command_displays_explicit_profile(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert "modo:   code-review-security" in result.stdout
+    assert "Modo" in result.stdout
+    assert "explícito" in result.stdout
+    assert "Profile" in result.stdout
+    assert "code-review-security" in result.stdout
+
+
+def test_startup_router_unavailable_does_not_end_shell(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_health",
+        lambda: (_ for _ in ()).throw(cli.RouterConnectionError("offline")),
+    )
+
+    result = runner.invoke(cli.app, input="/exit\n")
+
+    assert result.exit_code == 0
+    assert "× indisponível" in result.stdout
+    assert "villaz > " in result.stdout
+
+
+def test_health_connection_error_keeps_shell_running(monkeypatch) -> None:
+    calls = 0
+
+    def fake_get_health() -> cli.HealthResult:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return cli.HealthResult(live="alive", ready="ready")
+        raise cli.RouterConnectionError("offline")
+
+    monkeypatch.setattr(cli, "get_health", fake_get_health)
+
+    result = runner.invoke(cli.app, input="/health\n/exit\n")
+
+    assert result.exit_code == 0
+    assert "Erro do Router" in result.stdout
+    assert "offline" in result.stdout
+    assert result.stdout.count("villaz > ") >= 2
+
+
+def test_status_protocol_error_keeps_shell_running(monkeypatch) -> None:
+    calls = 0
+
+    def fake_get_health() -> cli.HealthResult:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return cli.HealthResult(live="alive", ready="ready")
+        raise cli.RouterProtocolError("invalid health response")
+
+    monkeypatch.setattr(cli, "get_health", fake_get_health)
+
+    result = runner.invoke(cli.app, input="/status\n/exit\n")
+
+    assert result.exit_code == 0
+    assert "Erro do Router" in result.stdout
+    assert "invalid health response" in result.stdout
+    assert result.stdout.count("villaz > ") >= 2
+
+
+def test_prompt_client_error_keeps_shell_running(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "send_prompt",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            cli.RouterClientError("transport failure")
+        ),
+    )
+
+    result = runner.invoke(cli.app, input="teste\n/exit\n")
+
+    assert result.exit_code == 0
+    assert "Falha ao acessar o Router" in result.stdout
+    assert "transport failure" in result.stdout
+    assert result.stdout.count("villaz > ") >= 2
+
+
+def test_help_command_displays_help_without_calling_router(monkeypatch) -> None:
+    def fail_if_called(
+        message: str,
+        *,
+        explicit_profile: str | None = None,
+    ) -> PromptResult:
+        raise AssertionError("/help não deve enviar prompt ao Router")
+
+    monkeypatch.setattr(cli, "send_prompt", fail_if_called)
+
+    result = runner.invoke(
+        cli.app,
+        input="/help\n/exit\n",
+    )
+
+    assert result.exit_code == 0
+    assert "Villaz-Lab CLI" in result.stdout
+    assert "--help" in result.stdout
+    assert "--version" in result.stdout
+    assert "/profile <id>" in result.stdout
+    assert "/profile auto" in result.stdout
+    assert "/health" in result.stdout
+    assert "/status" in result.stdout
+    assert "/exit" in result.stdout
+    assert result.stdout.count("villaz > ") >= 2

@@ -5,6 +5,7 @@ from typing import Annotated
 import typer
 
 
+from villaz_cli.presentation import show_confirmation, show_error, show_execution, show_health, show_help, show_prompt, show_splash, show_status, waiting_for_response
 from villaz_cli.http_client import (
     DEFAULT_ROUTER_URL,
     HealthResult,
@@ -20,27 +21,6 @@ from villaz_cli.http_client import (
 
 _DISTRIBUTION_NAME = "villaz-cli"
 
-_HELP_TEXT = """Villaz-Lab CLI
-
-Cliente interativo de terminal first-party para o Villaz-Lab Router.
-
-Uso: villaz [opções]
-
-Execute villaz sem argumentos para abrir o modo interativo.
-
-Opções:
---help     Exibe esta ajuda e encerra.
---version  Exibe a versão e encerra.
-
-No modo interativo:
- /profile <id>   Seleciona um profile explícito.
- /profile auto   Retorna ao roteamento automático.
- /health         Verifica a saúde do Router.
- /status         Mostra endpoint, modo e saúde do Router.
- /profile <id>   Seleciona um profile explícito.
- /profile auto   Retorna ao roteamento automático.
- /exit           Encerra o Villaz-Lab CLI.
-"""
 
 app = typer.Typer(
     add_completion=False,
@@ -55,7 +35,7 @@ def _installed_version() -> str:
 
 def _show_help(value: bool) -> None:
     if value:
-        typer.echo(_HELP_TEXT)
+        show_help()
         raise typer.Exit(code=0)
 
 
@@ -71,14 +51,15 @@ def _show_result(
     elapsed_seconds: float,
 ) -> None:
     typer.echo()
-    typer.echo("[router]")
-    typer.echo(f"estado:  {result.state}")
-    typer.echo(f"profile: {result.profile}")
-    typer.echo(f"modelo:  {result.model}")
-    typer.echo(f"rota:    {result.route_id or '-'}")
-    typer.echo(f"tempo:   {elapsed_seconds:.2f}s")
-    typer.echo(f"tokens:  {result.output_tokens}")
-    typer.echo(f"veloc.:  {result.tokens_per_second:.2f} tok/s")
+    show_execution(
+        state=result.state,
+        profile=result.profile,
+        model=result.model,
+        route=result.route_id or "-",
+        elapsed_seconds=elapsed_seconds,
+        output_tokens=result.output_tokens,
+        tokens_per_second=result.tokens_per_second,
+    )
     typer.echo()
     typer.echo("[resposta]")
     typer.echo(result.response)
@@ -89,57 +70,81 @@ def _show_api_error(error: RouterAPIError) -> None:
     typer.echo()
 
     if error.code == "UNROUTED":
-        typer.echo(
-            "Não foi possível selecionar automaticamente um profile "
-            "para esta solicitação."
-        )
-        typer.echo(
-            "Tente reformular a mensagem com mais contexto sobre a tarefa."
+        show_error(
+            title="Roteamento",
+            messages=(
+                "Não foi possível selecionar automaticamente um profile para esta solicitação.",
+                "Tente reformular a mensagem com mais contexto sobre a tarefa.",
+            ),
+            warning=True,
         )
     elif error.code == "AMBIGUOUS":
-        typer.echo(
-            "A solicitação correspondeu a mais de um profile "
-            "sem uma decisão determinística."
+        show_error(
+            title="Roteamento",
+            messages=(
+                "A solicitação correspondeu a mais de um profile sem uma decisão determinística.",
+            ),
+            warning=True,
         )
     elif error.code == "INVALID_PROFILE":
-        typer.echo("O Router rejeitou o profile informado.")
+        show_error(
+            title="Erro do Router",
+            messages=("O Router rejeitou o profile informado.",),
+        )
     else:
-        typer.echo(f"Erro do Router [{error.code}]: {error.message}")
+        show_error(
+            title=f"Erro do Router [{error.code}]",
+            messages=(error.message,),
+        )
 
     typer.echo()
+
 
 def _show_health() -> None:
     health = get_health()
 
     typer.echo()
-    typer.echo("[health]")
-    typer.echo(f"live:  {health.live}")
-    typer.echo(f"ready: {health.ready}")
+    show_health(
+        live=health.live,
+        ready=health.ready,
+    )
     typer.echo()
 
 
 def _show_status(explicit_profile: str | None) -> None:
     health = get_health()
-    mode = explicit_profile if explicit_profile is not None else "auto"
+    mode = "explícito" if explicit_profile is not None else "auto"
+    profile = explicit_profile if explicit_profile is not None else "automático"
 
     typer.echo()
-    typer.echo("[status]")
-    typer.echo(f"router: {DEFAULT_ROUTER_URL}")
-    typer.echo(f"modo:   {mode}")
-    typer.echo(f"live:   {health.live}")
-    typer.echo(f"ready:  {health.ready}")
+    show_status(
+        router="Villaz-Lab Router",
+        endpoint=DEFAULT_ROUTER_URL,
+        mode=mode,
+        profile=profile,
+        live=health.live,
+        ready=health.ready,
+    )
     typer.echo()
 
 def _interactive_shell() -> None:
     explicit_profile: str | None = None
 
-    typer.echo(f"Villaz-Lab CLI {_installed_version()}")
-    typer.echo("Router: http://127.0.0.1:8000")
-    typer.echo("Modo: auto")
-    typer.echo("Digite /exit para encerrar.")
+    try:
+        get_health()
+        router_available = True
+    except (RouterConnectionError, RouterProtocolError):
+        router_available = False
+
+    show_splash(
+        version=_installed_version(),
+        router=DEFAULT_ROUTER_URL,
+        router_available=router_available,
+    )
+    typer.echo()
 
     while True:
-        typer.echo("> ", nl=False)
+        show_prompt()
 
         try:
             line = input()
@@ -155,16 +160,22 @@ def _interactive_shell() -> None:
         if message == "/exit":
             return
 
+        if message == "/help":
+            typer.echo()
+            show_help()
+            typer.echo()
+            continue
+
         if message == "/health":
             try:
                 _show_health()
             except RouterConnectionError as exc:
                 typer.echo()
-                typer.echo(f"Erro: {exc}")
+                show_error(title="Erro do Router", messages=(str(exc),))
                 typer.echo()
             except RouterProtocolError as exc:
                 typer.echo()
-                typer.echo(f"Erro: {exc}")
+                show_error(title="Erro do Router", messages=(str(exc),))
                 typer.echo()
 
             continue
@@ -174,11 +185,11 @@ def _interactive_shell() -> None:
                 _show_status(explicit_profile)
             except RouterConnectionError as exc:
                 typer.echo()
-                typer.echo(f"Erro: {exc}")
+                show_error(title="Erro do Router", messages=(str(exc),))
                 typer.echo()
             except RouterProtocolError as exc:
                 typer.echo()
-                typer.echo(f"Erro: {exc}")
+                show_error(title="Erro do Router", messages=(str(exc),))
                 typer.echo()
 
             continue
@@ -197,29 +208,33 @@ def _interactive_shell() -> None:
             if requested_profile == "auto":
                 explicit_profile = None
                 typer.echo()
-                typer.echo("Modo alterado para: auto")
+                show_confirmation("Modo automático ativado.")
                 typer.echo()
                 continue
 
             explicit_profile = requested_profile
             typer.echo()
-            typer.echo(f"Profile ativo: {explicit_profile}")
+            show_confirmation(f"Profile ativo: {explicit_profile}")
             typer.echo()
             continue
 
         started_at = time.perf_counter()
 
         try:
-            result = send_prompt(
-                message,
-                explicit_profile=explicit_profile,
-            )
+            with waiting_for_response():
+                result = send_prompt(
+                    message,
+                    explicit_profile=explicit_profile,
+                )
         except RouterAPIError as exc:
             _show_api_error(exc)
             continue
         except RouterClientError as exc:
             typer.echo()
-            typer.echo(f"Falha ao acessar o Router: {exc}")
+            show_error(
+                title="Falha ao acessar o Router",
+                messages=(str(exc),),
+            )
             typer.echo()
             continue
         elapsed_seconds = time.perf_counter() - started_at
