@@ -3,6 +3,11 @@ from typing import Any
 
 import httpx
 
+from villaz_cli.session import (
+    ConversationRequest,
+    ProfileModeKind,
+)
+
 
 DEFAULT_ROUTER_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -67,12 +72,17 @@ def _parse_health_response(
     return status
 
 
-def _require_string(payload: dict[str, Any], field: str) -> str:
+def _require_string(
+    payload: dict[str, Any],
+    field: str,
+) -> str:
     value = payload.get(field)
+
     if not isinstance(value, str):
         raise RouterProtocolError(
             f"Resposta inválida do Router: campo '{field}' ausente ou inválido."
         )
+
     return value
 
 
@@ -106,7 +116,9 @@ def _require_exact_float(
 
 def _parse_success(payload: Any) -> PromptResult:
     if not isinstance(payload, dict):
-        raise RouterProtocolError("Resposta inválida do Router: JSON inesperado.")
+        raise RouterProtocolError(
+            "Resposta inválida do Router: JSON inesperado."
+        )
 
     response = _require_string(payload, "response")
     profile = _require_string(payload, "profile")
@@ -114,10 +126,15 @@ def _parse_success(payload: Any) -> PromptResult:
     state = _require_string(payload, "state")
 
     route_id = payload.get("route_id")
-    if route_id is not None and not isinstance(route_id, str):
+
+    if (
+        route_id is not None
+        and not isinstance(route_id, str)
+    ):
         raise RouterProtocolError(
             "Resposta inválida do Router: campo 'route_id' inválido."
         )
+
     metrics = payload.get("metrics")
 
     if not isinstance(metrics, dict):
@@ -150,23 +167,79 @@ def _parse_success(payload: Any) -> PromptResult:
     )
 
 
-def _parse_error(payload: Any) -> RouterAPIError | None:
+def _parse_error(
+    payload: Any,
+) -> RouterAPIError | None:
     if not isinstance(payload, dict):
         return None
 
     error = payload.get("error")
+
     if not isinstance(error, dict):
         return None
 
     code = error.get("code")
     message = error.get("message")
 
-    if not isinstance(code, str) or not isinstance(message, str):
+    if (
+        not isinstance(code, str)
+        or not isinstance(message, str)
+    ):
         raise RouterProtocolError(
             "Resposta de erro inválida recebida do Router."
         )
 
-    return RouterAPIError(code=code, message=message)
+    return RouterAPIError(
+        code=code,
+        message=message,
+    )
+
+
+def _send_prompt_payload(
+    payload: dict[str, Any],
+    *,
+    base_url: str,
+    timeout: float,
+    transport: httpx.BaseTransport | None,
+) -> PromptResult:
+    try:
+        with httpx.Client(
+            base_url=base_url,
+            timeout=timeout,
+            transport=transport,
+        ) as client:
+            response = client.post(
+                "/v1/prompt",
+                json=payload,
+            )
+
+    except httpx.RequestError as exc:
+        raise RouterConnectionError(
+            f"Não foi possível conectar ao Router em {base_url}."
+        ) from exc
+
+    try:
+        response_payload = response.json()
+    except ValueError as exc:
+        raise RouterProtocolError(
+            "O Router retornou uma resposta que não é JSON válido."
+        ) from exc
+
+    api_error = _parse_error(
+        response_payload
+    )
+
+    if api_error is not None:
+        raise api_error
+
+    if response.is_error:
+        raise RouterProtocolError(
+            f"O Router respondeu com HTTP {response.status_code}."
+        )
+
+    return _parse_success(
+        response_payload
+    )
 
 
 def get_health(
@@ -181,8 +254,13 @@ def get_health(
             timeout=timeout,
             transport=transport,
         ) as client:
-            live_response = client.get("/health/live")
-            ready_response = client.get("/health/ready")
+            live_response = client.get(
+                "/health/live"
+            )
+            ready_response = client.get(
+                "/health/ready"
+            )
+
     except httpx.RequestError as exc:
         raise RouterConnectionError(
             f"Não foi possível conectar ao Router em {base_url}."
@@ -198,12 +276,14 @@ def get_health(
 
     if live_response.is_error:
         raise RouterProtocolError(
-            f"O Router respondeu com HTTP {live_response.status_code} em /health/live."
+            f"O Router respondeu com HTTP "
+            f"{live_response.status_code} em /health/live."
         )
 
     if ready_response.is_error:
         raise RouterProtocolError(
-            f"O Router respondeu com HTTP {ready_response.status_code} em /health/ready."
+            f"O Router respondeu com HTTP "
+            f"{ready_response.status_code} em /health/ready."
         )
 
     return HealthResult(
@@ -217,6 +297,7 @@ def get_health(
         ),
     )
 
+
 def send_prompt(
     message: str,
     *,
@@ -225,41 +306,62 @@ def send_prompt(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     transport: httpx.BaseTransport | None = None,
 ) -> PromptResult:
-    try:
-        with httpx.Client(
-            base_url=base_url,
-            timeout=timeout,
-            transport=transport,
-        ) as client:
-            payload: dict[str, str] = {"message": message}
+    payload: dict[str, Any] = {
+        "message": message,
+    }
 
-            if explicit_profile is not None:
-                payload["explicit_profile"] = explicit_profile
-
-            response = client.post(
-                "/v1/prompt",
-                json=payload,
-            )
-
-    except httpx.RequestError as exc:
-        raise RouterConnectionError(
-            f"Não foi possível conectar ao Router em {base_url}."
-        ) from exc
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise RouterProtocolError(
-            "O Router retornou uma resposta que não é JSON válido."
-        ) from exc
-
-    api_error = _parse_error(payload)
-    if api_error is not None:
-        raise api_error
-
-    if response.is_error:
-        raise RouterProtocolError(
-            f"O Router respondeu com HTTP {response.status_code}."
+    if explicit_profile is not None:
+        payload["explicit_profile"] = (
+            explicit_profile
         )
 
-    return _parse_success(payload)
+    return _send_prompt_payload(
+        payload,
+        base_url=base_url,
+        timeout=timeout,
+        transport=transport,
+    )
+
+
+def send_conversation_request(
+    request: ConversationRequest,
+    *,
+    base_url: str = DEFAULT_ROUTER_URL,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    transport: httpx.BaseTransport | None = None,
+) -> PromptResult:
+    payload: dict[str, Any] = {
+        "message": (
+            request.current_message.content
+        ),
+        "history": [
+            {
+                "user": turn.user.content,
+                "assistant": (
+                    turn.assistant.content
+                ),
+            }
+            for turn
+            in request.effective_context.turns
+        ],
+    }
+
+    if (
+        request.profile_mode.kind
+        is ProfileModeKind.EXPLICIT
+    ):
+        assert (
+            request.profile_mode.profile_id
+            is not None
+        )
+
+        payload["explicit_profile"] = (
+            request.profile_mode.profile_id
+        )
+
+    return _send_prompt_payload(
+        payload,
+        base_url=base_url,
+        timeout=timeout,
+        transport=transport,
+    )
