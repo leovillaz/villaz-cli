@@ -1,0 +1,5 @@
+.gitattributes text eol=lf
+.editorconfig text eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.tcss text eol=lf
