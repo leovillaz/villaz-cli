@@ -1,0 +1,214 @@
+Screen {
+    layout: vertical;
+    background: #071018;
+    color: #d7e3ec;
+}
+
+#app-header {
+    height: 2;
+    width: 100%;
+    padding: 0 2;
+    content-align: left middle;
+    background: #091721;
+    color: #63d8ff;
+    border-bottom: solid #17445e;
+}
+
+#workspace {
+    width: 100%;
+    height: 1fr;
+    padding: 1;
+    background: #071018;
+}
+
+#sessions-panel,
+#conversation-panel,
+#context-panel {
+    height: 100%;
+    padding: 1 2;
+    background: #09141d;
+    border: round #18516f;
+    color: #cad8e2;
+    border-title-color: #63d8ff;
+}
+
+#sessions-panel {
+    width: 22%;
+    min-width: 20;
+}
+
+#conversation-panel {
+    width: 1fr;
+    margin: 0 1;
+    border: round #247da5;
+}
+
+#context-panel {
+    width: 22%;
+    min-width: 24;
+    border-title-color: #a987ff;
+}
+
+#sessions-panel:focus,
+#conversation-panel:focus {
+    background: #09141d;
+    border: round #63d8ff;
+    border-title-color: #bfefff;
+}
+
+#context-panel:focus {
+    background: #09141d;
+    border: round #b58cff;
+    border-title-color: #d4c0ff;
+}
+
+#composer-region {
+    width: 100%;
+    height: 8;
+    padding: 0 1 1 1;
+    background: #071018;
+}
+
+#composer-title {
+    height: 1;
+    padding-left: 1;
+    color: #63d8ff;
+    text-style: bold;
+}
+
+#execution-feedback {
+    width: 100%;
+    height: 1;
+    padding-left: 1;
+    color: #9ccfe3;
+}
+
+#composer {
+    height: 1fr;
+    width: 100%;
+    background: #09141d;
+    color: #e3edf4;
+    border: round #2386b5;
+}
+
+#composer:focus {
+    border: round #63d8ff;
+}
+
+#composer > .text-area--placeholder {
+    color: #607789;
+}
+
+#composer > .text-area--cursor {
+    color: #071018;
+    background: #63d8ff;
+}
+
+#composer > .text-area--selection {
+    background: #433a77;
+}
+
+#app-footer {
+    height: 1;
+    width: 100%;
+    content-align: center middle;
+    background: #091721;
+    color: #718899;
+}
+
+#conversation-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+#conversation-empty-state {
+    width: 100%;
+    height: auto;
+    padding: 1 0;
+    color: #7d919f;
+}
+
+.conversation-message {
+    width: 100%;
+    height: auto;
+    padding: 1 0;
+}
+
+.message-header {
+    width: 100%;
+    height: 1;
+    text-style: bold;
+}
+
+.user-message .message-header {
+    color: #63d8ff;
+}
+
+.assistant-message .message-header {
+    color: #b58cff;
+}
+
+.message-content {
+    width: 100%;
+    height: auto;
+    padding: 0 0 0 2;
+    color: #d7e3ec;
+}
+
+.message-metadata {
+    width: 100%;
+    height: 1;
+    padding: 0 0 0 2;
+    color: #718899;
+}
+
+#sessions-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+#sessions-empty-state {
+    width: 100%;
+    height: auto;
+    padding: 1 0;
+    color: #7d919f;
+}
+
+.session-list-item {
+    width: 100%;
+    height: auto;
+    padding: 1 0;
+}
+
+.session-item-title {
+    width: 100%;
+    height: auto;
+    color: #d7e3ec;
+    text-style: bold;
+}
+
+.session-item-metadata {
+    width: 100%;
+    height: 1;
+    color: #718899;
+}
+
+.session-list-item.selected .session-item-title {
+    color: #63d8ff;
+}
+
+.session-list-item.selected .session-item-metadata {
+    color: #9ccfe3;
+}
+
+#context-panel {
+    overflow-x: hidden;
+}
+
+#context-mode,
+#context-session,
+#context-turns,
+#context-profile {
+    width: 100%;
+    height: 1;
+}

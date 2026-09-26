@@ -24,9 +24,10 @@ classifiers = [
     "Topic :: Terminals",
 ]
 dependencies = [
-     "httpx==0.28.1",
+    "httpx==0.28.1",
     "typer==0.27.2",
     "rich==15.0.0",
+    "textual==8.2.8",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +46,9 @@ villaz = "villaz_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"villaz_cli.tui" = ["*.tcss"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
