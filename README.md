@@ -126,23 +126,16 @@ Inicie a interface:
 villaz
 ```
 
-A CLI abre diretamente o modo interativo.
+O comando abre a interface TUI full-screen do Villaz-Lab CLI.
 
-Exemplo:
+A interface é organizada em áreas para:
 
-```text
-╭───────────── Villaz-Lab ─────────────╮
-│ Villaz-Lab CLI 0.1.0                 │
-│ Router         http://127.0.0.1:8000 │
-│                ● online              │
-│ Modo           auto                  │
-╰─ Interface local para o Villaz-Lab ──╯
+- sessões;
+- conversa;
+- contexto operacional;
+- composição da próxima mensagem.
 
-Digite uma mensagem ou /help
-villaz >
-```
-
-> A apresentação pode variar conforme largura do terminal e suporte visual do ambiente.
+O layout se adapta à largura disponível no terminal.
 
 ## Opções externas
 
@@ -152,7 +145,7 @@ villaz >
 villaz --help
 ```
 
-Esse comando exibe ajuda estática e não inicia o chat.
+Esse comando exibe a ajuda estática e encerra sem iniciar a TUI ou acessar o Router.
 
 ### Versão
 
@@ -160,81 +153,57 @@ Esse comando exibe ajuda estática e não inicia o chat.
 villaz --version
 ```
 
-Esse comando exibe apenas a versão instalada da CLI.
+Esse comando exibe apenas a versão instalada da CLI:
 
-## Comandos do modo interativo
+```text
+Villaz-Lab CLI 0.1.0
+```
 
-| Comando | Função |
+## Controles da TUI
+
+| Controle | Função |
 | --- | --- |
-| `/help` | Exibe a ajuda disponível |
-| `/health` | Executa uma nova verificação de saúde do Router |
-| `/status` | Mostra endpoint, modo, profile e saúde do Router |
-| `/profile <id>` | Seleciona explicitamente um profile |
-| `/profile auto` | Retorna ao roteamento automático |
-| `/exit` | Encerra a CLI |
+| `Enter` | Envia a mensagem |
+| `Shift+Enter` | Insere uma nova linha |
+| `F2` | Foca Sessões |
+| `F3` | Foca Conversa |
+| `F4` | Foca Contexto |
+| `F6` | Foca Mensagem |
+| `Ctrl+Q` | Encerra o Villaz-Lab CLI |
 
-A versão atual **não possui** comandos como:
+A TUI atual ainda não expõe comandos slash para seleção de profile, consulta de health/status ou gerenciamento de sessões.
 
-```text
-/profiles
-/retry
-/last
-/clear
-/about
-/config
-```
+Esses recursos só serão documentados como disponíveis quando possuírem contrato e implementação próprios na interface full-screen.
 
-Funcionalidades futuras não são documentadas como disponíveis até que façam parte de uma versão publicada.
+## Conversação e roteamento
 
-## Roteamento automático
+As mensagens digitadas no composer são processadas pela camada conversacional do Villaz-Lab CLI e enviadas ao Villaz-Lab Router através de sua API HTTP pública.
 
-A CLI inicia em modo:
+A sessão inicial utiliza roteamento automático. Nesse modo, a mensagem é enviada sem um profile explícito e o Router tenta decidir deterministicamente qual profile deve processar a solicitação.
+
+Uma mensagem genérica demais pode resultar em:
 
 ```text
-auto
-```
-
-Nesse modo, a mensagem é enviada ao Router sem um profile explícito, e o Router tenta decidir deterministicamente qual profile deve tratar a solicitação.
-
-Exemplo:
-
-```text
-villaz > Revise este código Python procurando vulnerabilidades de segurança.
-```
-
-O resultado depende das regras e profiles configurados no servidor.
-
-Uma solicitação genérica demais pode resultar em:
-
-```text
-Não foi possível selecionar automaticamente um profile para esta solicitação.
+Não foi possível selecionar um perfil automaticamente.
 ```
 
 Isso representa um resultado `UNROUTED` do Router e não necessariamente uma falha da CLI.
 
-Tente reformular a mensagem fornecendo mais contexto sobre a tarefa.
+Nesse caso, reformule a mensagem fornecendo mais contexto sobre a tarefa.
 
-## Profile explícito
+A TUI atual ainda não oferece um controle para selecionar manualmente um profile explícito.
 
-Também é possível selecionar diretamente um profile válido da instalação do Router:
+Profiles, regras de roteamento e associação de modelos continuam pertencendo ao Router.
 
-```text
-villaz > /profile code-review-security
-✓ Profile ativo: code-review-security
-```
+## Histórico lógico e contexto efetivo
 
-As mensagens seguintes utilizarão esse profile até que o modo seja alterado.
+A CLI mantém uma conversa formada por mensagens confirmadas do usuário e do assistente.
 
-Para retornar ao roteamento automático:
+O histórico lógico da sessão e o contexto efetivamente enviado ao modelo são conceitos distintos.
 
-```text
-villaz > /profile auto
-✓ Modo automático ativado.
-```
+Quando o Router informa `CONTEXT_OVERFLOW`, a camada conversacional pode reduzir automaticamente o contexto efetivo removendo as Turns completas mais antigas e tentar novamente, sem alterar retroativamente o histórico lógico da sessão.
 
-Os IDs de profiles pertencem à configuração do Router.
-
-Uma instalação personalizada pode utilizar profiles e modelos diferentes dos utilizados pela instalação oficial.
+A TUI não cria uma nova Turn quando a execução falha.
 
 ## Modelos personalizados
 
@@ -242,102 +211,27 @@ O Villaz-Lab CLI não depende de um modelo específico.
 
 Um operador pode configurar sua instalação do Villaz-Lab Router com modelos diferentes, desde que a configuração do servidor permaneça válida e preserve o contrato público da API.
 
-Por exemplo, um mesmo profile poderia utilizar:
+Profiles, modelos e regras de execução são responsabilidade do Router.
 
-```text
-qwen2.5-coder:14b
-```
-
-em uma instalação e outro modelo compatível em outra.
-
-A CLI simplesmente apresenta o `profile` e o `model` informados pelo Router na resposta.
-
-Modelos, profiles e regras pertencem ao servidor.
+A interface atual prioriza a experiência conversacional e não expõe todos os metadados internos de execução, como modelo, rota, quantidade de tokens ou velocidade de geração.
 
 ## Exemplo de execução
 
-Exemplo ilustrativo utilizando um profile explícito:
+Com a TUI aberta, digite a solicitação no composer e pressione `Enter`.
+
+Exemplo conceitual:
 
 ```text
-villaz > /profile code-review-security
+Usuário:
+Revise este código Python procurando vulnerabilidades de segurança.
 
-✓ Profile ativo: code-review-security
-
-villaz > Responda apenas com a palavra OK.
-
-╭─────────── Execução ────────────╮
-│ Estado     explicit             │
-│ Profile    code-review-security │
-│ Modelo     qwen2.5-coder:14b    │
-│ Rota       -                    │
-│ Tempo      20.97s               │
-│ Tokens     2                    │
-│ Velocidade 45.29 tok/s          │
-╰─────────────────────────────────╯
-
-[resposta]
-OK
+Assistente:
+[resposta produzida pelo modelo selecionado pelo Router]
 ```
 
-Os seguintes valores são dependentes da instalação e da execução:
+A resposta só é adicionada à conversa após uma execução bem-sucedida.
 
-- estado;
-- profile;
-- modelo;
-- rota;
-- tempo;
-- quantidade de tokens;
-- velocidade;
-- texto produzido pelo modelo.
-
-O exemplo acima não define valores obrigatórios para outras instalações.
-
-## Saúde do Router
-
-Dentro da CLI:
-
-```text
-villaz > /health
-```
-
-Exemplo saudável:
-
-```text
-Saúde do Router
-
-Live   ● online
-Ready  ✓ pronto
-```
-
-`Live` indica que o serviço está acessível.
-
-`Ready` indica que o Router está pronto para atender as operações previstas pelo seu contrato.
-
-## Status
-
-Use:
-
-```text
-villaz > /status
-```
-
-A saída apresenta informações como:
-
-- identidade do Router;
-- endpoint;
-- modo atual;
-- profile atual;
-- Live;
-- Ready.
-
-No modo automático:
-
-```text
-Modo     auto
-Profile  automático
-```
-
-No modo explícito, o profile selecionado é mostrado diretamente.
+Em caso de falha, a TUI apresenta uma mensagem pública sanitizada e restaura o conteúdo original no composer para permitir nova tentativa.
 
 ## Endpoint do Router
 
@@ -407,14 +301,6 @@ http://127.0.0.1:8000
 
 Uma falha de comunicação com o Router não significa necessariamente que a instalação da CLI esteja incorreta.
 
-### Falha em `/health` ou `/status`
-
-Se `/health` ou `/status` apresentar erro, isso pode indicar que o Router está inacessível ou que uma das verificações públicas de saúde não retornou o contrato esperado.
-
-Na versão `0.1.0`, a CLI não apresenta separadamente todos os estados parciais possíveis entre `Live` e `Ready`.
-
-Problemas de inicialização, runtime, profiles ou modelos devem ser investigados no servidor.
-
 ### `UNROUTED`
 
 Significa que o Router não conseguiu selecionar automaticamente um profile para a solicitação.
@@ -423,7 +309,9 @@ Tente:
 
 - fornecer mais contexto;
 - descrever claramente a natureza da tarefa;
-- utilizar um profile explícito válido quando apropriado.
+- reformular a solicitação de forma mais específica.
+
+A TUI atual não possui seleção manual de profile.
 
 ### `AMBIGUOUS`
 
@@ -431,11 +319,19 @@ Significa que a solicitação correspondeu a mais de uma possibilidade sem uma d
 
 Reformule a mensagem para torná-la mais específica.
 
-### Profile inválido
+### `CONTEXT_OVERFLOW`
 
-Se o Router rejeitar o profile informado, confirme o ID com o operador daquela instalação.
+Significa que o contexto enviado ao Router excedeu a capacidade disponível para a execução.
 
-A versão atual da CLI não possui `/profiles`.
+A camada conversacional tenta reduzir automaticamente o contexto efetivo removendo as Turns completas mais antigas.
+
+Se não for possível concluir a execução mesmo após essa redução, a TUI apresenta:
+
+```text
+A conversa excede o contexto disponível do modelo.
+```
+
+Uma falha desse tipo não cria uma nova Turn na conversa.
 
 ### Falha durante execução do modelo
 
