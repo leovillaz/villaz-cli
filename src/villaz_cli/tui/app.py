@@ -9,11 +9,15 @@ from textual.widgets import Static, TextArea
 from villaz_cli.tui.context import ContextView
 from villaz_cli.tui.conversation import ConversationView
 from villaz_cli.tui.sessions import SessionListView
+from villaz_cli.tui.profile import (
+    ProfileSelectionScreen,
+)
 
 from datetime import datetime, timezone
 
 from villaz_cli.session import (
     PersistenceMode,
+    ProfileMode,
 )
 from villaz_cli.session_factory import (
     create_ephemeral_session,
@@ -33,6 +37,9 @@ from villaz_cli.http_client import (
     RouterAPIError,
     RouterConnectionError,
     RouterProtocolError,
+)
+from villaz_cli.session_persistence import (
+    change_profile_mode_with_autosave,
 )
 
 WIDE_MIN_WIDTH = 120
@@ -139,6 +146,12 @@ class VillazApp(App[None]):
             "f4",
             "focus_context",
             "Contexto",
+            priority=True,
+        ),
+        Binding(
+            "f5",
+            "select_profile",
+            "Profile",
             priority=True,
         ),
         Binding(
@@ -280,6 +293,7 @@ class VillazApp(App[None]):
                 "F2 Sessões"
                 "  •  F3 Conversa"
                 "  •  F4 Contexto"
+                "  •  F5 Profile"
                 "  •  F6 Mensagem"
                 "  •  Ctrl+Q Sair"
             )
@@ -291,6 +305,7 @@ class VillazApp(App[None]):
             footer.update(
                 "F2 Sessões"
                 "  •  F3 Conversa"
+                "  •  F5 Profile"
                 "  •  F6 Mensagem"
                 "  •  Ctrl+Q Sair"
             )
@@ -301,6 +316,7 @@ class VillazApp(App[None]):
 
             footer.update(
                 "F3 Conversa"
+                "  •  F5 Profile"
                 "  •  F6 Mensagem"
                 "  •  Ctrl+Q Sair"
             )
@@ -381,6 +397,55 @@ class VillazApp(App[None]):
         if panel.display:
             panel.focus()
 
+    def action_select_profile(self) -> None:
+        if self._execution_busy:
+            return
+
+        self.push_screen(
+            ProfileSelectionScreen(
+                current_mode=(
+                    self.session.profile_mode
+                )
+            ),
+            self._apply_profile_selection,
+    )
+
+    def _apply_profile_selection(
+        self,
+        profile_mode: ProfileMode | None,
+    ) -> None:
+        if profile_mode is None:
+            return
+
+        if (
+            profile_mode
+            == self.session.profile_mode
+        ):
+            return
+
+        change_profile_mode_with_autosave(
+            self.session,
+            profile_mode,
+            updated_at=datetime.now(
+                timezone.utc
+            ),
+            store=self.session_store,
+        )
+
+        context = self.query_one(
+            "#context-panel",
+            ContextView,
+        )
+
+        context.set_mode(
+            self.session.profile_mode.kind.value
+        )
+
+        context.set_profile(
+            self.session.profile_mode.profile_id
+        )
+
+
     def action_focus_composer(self) -> None:
         self.query_one(
             "#composer",
@@ -443,7 +508,8 @@ class VillazApp(App[None]):
             self._set_execution_feedback(
                 self._map_execution_error(
                     error
-                )
+                ),
+                is_error=True,
             )
 
             self._finish_execution()
@@ -551,10 +617,17 @@ class VillazApp(App[None]):
     def _set_execution_feedback(
         self,
         text: str | None,
+        *,
+        is_error: bool = False,
     ) -> None:
         feedback = self.query_one(
             "#execution-feedback",
             Static,
+        )
+
+        feedback.set_class(
+            is_error,
+            "error",
         )
 
         if text is None:

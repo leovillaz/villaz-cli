@@ -68,6 +68,10 @@ def show_help() -> None:
         "Foca Contexto.",
     )
     controls.add_row(
+        "F5",
+        "Seleciona Profile.",
+    )
+    controls.add_row(
         "F6",
         "Foca Mensagem.",
     )
@@ -125,7 +129,30 @@ def show_help() -> None:
     body.add_row(
         controls
     )
+    body.add_row(
+        Text("")
+    )
 
+    body.add_row(
+        Text(
+            "Profile",
+            style="villaz.muted",
+        )
+    )
+
+    body.add_row(
+        Text(
+            "F5 abre a seleção entre modo automático "
+            "e profile explícito."
+        )
+    )
+
+    body.add_row(
+        Text(
+            "A CLI não lista profiles; um ID explícito "
+            "é validado pelo Router no envio."
+        )
+    )
     console.print(
         Panel(
             body,

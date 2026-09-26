@@ -26,16 +26,17 @@ Profile / modelo configurado no servidor
 
 A versão `0.1.0` oferece:
 
-- chat interativo stateless;
+- interface TUI full-screen baseada em Textual;
+- sessão conversacional efêmera em memória;
+- histórico lógico formado por Turns confirmadas;
 - roteamento automático por padrão;
-- seleção explícita de profile;
-- verificação de saúde do Router;
-- exibição de estado, profile, modelo, rota e métricas da execução;
+- seleção explícita de profile através de `F5`;
+- redução automática do contexto efetivo em `CONTEXT_OVERFLOW`;
 - tratamento amigável de erros públicos do Router;
-- interface de terminal baseada em Rich;
+- ajuda externa estática baseada em Rich;
 - instalação isolada como aplicação Python.
 
-A CLI permanece sem histórico conversacional ou sessões persistentes.
+A CLI ainda não oferece gerenciamento ou persistência de sessões entre execuções.
 
 ## Requisitos
 
@@ -168,18 +169,28 @@ Villaz-Lab CLI 0.1.0
 | `F2` | Foca Sessões |
 | `F3` | Foca Conversa |
 | `F4` | Foca Contexto |
+| `F5` | Seleciona o modo/profile da sessão |
 | `F6` | Foca Mensagem |
 | `Ctrl+Q` | Encerra o Villaz-Lab CLI |
 
-A TUI atual ainda não expõe comandos slash para seleção de profile, consulta de health/status ou gerenciamento de sessões.
+A seleção de profile é realizada nativamente pela TUI através de `F5`.
 
-Esses recursos só serão documentados como disponíveis quando possuírem contrato e implementação próprios na interface full-screen.
+A interface continua sem comandos slash para profile, health/status ou gerenciamento de sessões. Esses recursos não devem ser presumidos apenas por terem existido na interface linear anterior.
 
 ## Conversação e roteamento
 
 As mensagens digitadas no composer são processadas pela camada conversacional do Villaz-Lab CLI e enviadas ao Villaz-Lab Router através de sua API HTTP pública.
 
 A sessão inicial utiliza roteamento automático. Nesse modo, a mensagem é enviada sem um profile explícito e o Router tenta decidir deterministicamente qual profile deve processar a solicitação.
+
+Pressionando `F5`, o usuário pode alternar a sessão entre:
+
+- **automático** — nenhuma identificação explícita de profile é enviada e o Router continua responsável pelo roteamento;
+- **explícito** — o usuário informa manualmente um `profile_id`, que passa a ser utilizado nas próximas mensagens da sessão.
+
+A CLI não mantém um catálogo local de profiles e não tenta validar previamente se o ID informado existe. Essa validação continua pertencendo ao Villaz-Lab Router durante a execução.
+
+Alterar o modo/profile não limpa nem substitui o histórico lógico já confirmado da conversa.
 
 Uma mensagem genérica demais pode resultar em:
 
@@ -190,8 +201,6 @@ Não foi possível selecionar um perfil automaticamente.
 Isso representa um resultado `UNROUTED` do Router e não necessariamente uma falha da CLI.
 
 Nesse caso, reformule a mensagem fornecendo mais contexto sobre a tarefa.
-
-A TUI atual ainda não oferece um controle para selecionar manualmente um profile explícito.
 
 Profiles, regras de roteamento e associação de modelos continuam pertencendo ao Router.
 
@@ -311,7 +320,9 @@ Tente:
 - descrever claramente a natureza da tarefa;
 - reformular a solicitação de forma mais específica.
 
-A TUI atual não possui seleção manual de profile.
+Se você conhece o `profile_id` adequado, pode pressionar `F5` e selecionar um profile explícito para as próximas mensagens.
+
+A existência e validade desse profile serão verificadas pelo Router durante a execução.
 
 ### `AMBIGUOUS`
 
@@ -358,22 +369,23 @@ Uma falha do modelo ou runtime deve ser investigada no servidor.
 
 A versão `0.1.0`:
 
-- não possui histórico conversacional;
-- não mantém sessões persistentes;
-- não cria transcript;
-- não salva automaticamente prompts e respostas;
+- mantém apenas uma sessão efêmera durante a execução atual da TUI;
+- não oferece gerenciamento, listagem, retomada ou persistência de sessões pela interface;
+- não cria transcript exportável;
+- não salva automaticamente prompts e respostas entre execuções;
 - não possui streaming;
-- não lista profiles;
+- não lista profiles disponíveis;
+- não valida localmente a existência de um `profile_id` explícito;
 - não seleciona modelos diretamente;
 - não instala nem administra Ollama;
 - não instala nem administra o Router;
-- não configura profiles ou regras;
+- não configura profiles ou regras no servidor;
 - não possui configuração persistente de endpoint;
 - não funciona como cliente genérico para backends arbitrários.
 
-Cada mensagem é tratada como uma solicitação independente.
+O histórico lógico existe durante a Session atual e é utilizado como contexto conversacional nas mensagens seguintes.
 
-Histórico, sessões e contexto conversacional pertencem a etapas futuras do projeto e não devem ser assumidos nesta versão.
+Esse histórico ainda não sobrevive ao encerramento da TUI porque o gerenciamento de sessões persistentes permanece fora do escopo desta versão.
 
 ## Privacidade e segurança
 

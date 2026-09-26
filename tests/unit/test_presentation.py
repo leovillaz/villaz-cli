@@ -95,7 +95,12 @@ def test_show_help_renders_external_options_and_tui_controls(
     assert "F2" in rendered
     assert "F3" in rendered
     assert "F4" in rendered
+    assert "F5" in rendered
     assert "F6" in rendered
+    assert "modo automático" in rendered
+    assert "profile explícito" in rendered
+    assert "não lista profiles" in rendered
+    assert "validado pelo Router" in rendered
     assert "Ctrl+Q" in rendered
 
 
@@ -160,5 +165,6 @@ def test_show_help_preserves_tui_controls_in_narrow_terminal(
     assert "F2" in compact
     assert "F3" in compact
     assert "F4" in compact
+    assert "F5" in compact
     assert "F6" in compact
     assert "Ctrl+Q" in compact

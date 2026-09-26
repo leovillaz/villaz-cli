@@ -3,9 +3,8 @@ import threading
 
 from datetime import timezone
 from types import SimpleNamespace
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Static, TextArea
+from textual.widgets import Static, TextArea, Input
 
 from villaz_cli.tui.context import ContextView
 from villaz_cli.tui.conversation import (
@@ -23,9 +22,13 @@ from villaz_cli.tui.app import (
 
 from villaz_cli.session import (
     PersistenceMode,
+    ProfileMode,
     ProfileModeKind,
     SessionAuthority,
     SessionLifecycle,
+)
+from villaz_cli.tui.profile import (
+    ProfileSelectionScreen,
 )
 from villaz_cli.session_stores import (
     EphemeralSessionStateStore,
@@ -244,12 +247,7 @@ def test_tui_declares_navigation_shortcuts() -> None:
         VillazApp.BINDINGS
     )
 
-    assert len(bindings) == 5
-
-    assert all(
-        isinstance(binding, Binding)
-        for binding in bindings
-    )
+    assert len(bindings) == 6
 
     assert [
         binding.key
@@ -258,6 +256,7 @@ def test_tui_declares_navigation_shortcuts() -> None:
         "f2",
         "f3",
         "f4",
+        "f5",
         "f6",
         "ctrl+q",
     ]
@@ -269,12 +268,13 @@ def test_tui_declares_navigation_shortcuts() -> None:
         "focus_sessions",
         "focus_conversation",
         "focus_context",
+        "select_profile",
         "focus_composer",
         "quit",
     ]
 
     assert all(
-        binding.priority is True
+        binding.priority
         for binding in bindings
     )
 
@@ -459,6 +459,11 @@ def test_tui_executes_submission_in_worker_thread(
             assert str(
                 feedback.render()
             ) == "Processando..."
+
+            assert (
+                feedback.has_class("error")
+                is False
+            )
 
             message = captured["message"]
 
@@ -778,6 +783,9 @@ def test_tui_releases_composer_after_worker_error(
 
             assert feedback.display is True
 
+            assert feedback.has_class(
+                "error"
+            )
             assert str(
                 feedback.render()
             ) == (
@@ -970,6 +978,11 @@ def test_tui_replaces_previous_error_feedback_on_new_successful_submission(
             assert str(
                 feedback.render()
             ) == "Processando..."
+
+            assert (
+                feedback.has_class("error")
+                is False
+            )
 
             second_release.set()
 
@@ -1321,6 +1334,31 @@ def test_f4_focuses_context_when_visible() -> None:
     )
 
 
+def test_f5_opens_profile_selection_screen() -> None:
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            await pilot.press("f5")
+            await pilot.pause()
+
+            assert isinstance(
+                app.screen,
+                ProfileSelectionScreen,
+            )
+
+            assert (
+                app.screen.current_mode
+                == app.session.profile_mode
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
 def test_f6_returns_focus_to_composer() -> None:
     async def scenario() -> None:
         app = VillazApp()
@@ -1664,6 +1702,478 @@ def test_footer_changes_with_terminal_width() -> None:
 
             assert "F2 Sessões" not in narrow
             assert "F4 Contexto" not in narrow
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_applies_explicit_mode_and_updates_context() -> None:
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            await pilot.press("f5")
+            await pilot.pause()
+
+            screen = app.screen
+
+            assert isinstance(
+                screen,
+                ProfileSelectionScreen,
+            )
+
+            profile_input = screen.query_one(
+                "#profile-input",
+                Input,
+            )
+
+            profile_input.value = (
+                "  code-review-security  "
+            )
+
+            await pilot.click(
+                "#profile-apply"
+            )
+
+            await pilot.pause()
+
+            assert (
+                app.session.profile_mode
+                == ProfileMode.explicit(
+                    "code-review-security"
+                )
+            )
+
+            context = app.query_one(
+                "#context-panel",
+                ContextView,
+            )
+
+            assert (
+                context.mode
+                == ProfileModeKind.EXPLICIT.value
+            )
+
+            assert (
+                context.profile
+                == "code-review-security"
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_can_return_to_auto_mode() -> None:
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            app._apply_profile_selection(
+                ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            await pilot.press("f5")
+            await pilot.pause()
+
+            screen = app.screen
+
+            assert isinstance(
+                screen,
+                ProfileSelectionScreen,
+            )
+
+            assert (
+                screen.current_mode
+                == ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            await pilot.click(
+                "#profile-auto"
+            )
+
+            await pilot.pause()
+
+            assert (
+                app.session.profile_mode.kind
+                is ProfileModeKind.AUTO
+            )
+
+            assert (
+                app.session.profile_mode.profile_id
+                is None
+            )
+
+            context = app.query_one(
+                "#context-panel",
+                ContextView,
+            )
+
+            assert context.mode == "auto"
+            assert context.profile is None
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_uses_autosave_contract(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_change_profile_mode_with_autosave(
+        session,
+        profile_mode,
+        *,
+        updated_at,
+        store,
+    ) -> None:
+        captured["session"] = session
+        captured["profile_mode"] = (
+            profile_mode
+        )
+        captured["updated_at"] = updated_at
+        captured["store"] = store
+
+        session.change_profile_mode(
+            profile_mode,
+            updated_at=updated_at,
+        )
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app."
+        "change_profile_mode_with_autosave",
+        fake_change_profile_mode_with_autosave,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ):
+            requested = ProfileMode.explicit(
+                "unity-dev"
+            )
+
+            app._apply_profile_selection(
+                requested
+            )
+
+            assert (
+                captured["session"]
+                is app.session
+            )
+
+            assert (
+                captured["profile_mode"]
+                == requested
+            )
+
+            assert (
+                captured["store"]
+                is app.session_store
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_cancel_preserves_session(
+    monkeypatch,
+) -> None:
+    def unexpected_change(*args, **kwargs) -> None:
+        raise AssertionError(
+            "Cancelamento não deve alterar o profile."
+        )
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app."
+        "change_profile_mode_with_autosave",
+        unexpected_change,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            original_mode = (
+                app.session.profile_mode
+            )
+            original_updated_at = (
+                app.session.updated_at
+            )
+
+            await pilot.press("f5")
+            await pilot.pause()
+
+            screen = app.screen
+
+            assert isinstance(
+                screen,
+                ProfileSelectionScreen,
+            )
+
+            await pilot.click(
+                "#profile-cancel"
+            )
+            await pilot.pause()
+
+            assert (
+                app.session.profile_mode
+                == original_mode
+            )
+            assert (
+                app.session.updated_at
+                == original_updated_at
+            )
+
+            context = app.query_one(
+                "#context-panel",
+                ContextView,
+            )
+
+            assert (
+                context.mode
+                == original_mode.kind.value
+            )
+            assert (
+                context.profile
+                == original_mode.profile_id
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_same_mode_is_noop(
+    monkeypatch,
+) -> None:
+    def unexpected_change(*args, **kwargs) -> None:
+        raise AssertionError(
+            "Modo idêntico não deve gerar autosave."
+        )
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app."
+        "change_profile_mode_with_autosave",
+        unexpected_change,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ):
+            original_updated_at = (
+                app.session.updated_at
+            )
+
+            app._apply_profile_selection(
+                ProfileMode.auto()
+            )
+
+            assert (
+                app.session.profile_mode
+                == ProfileMode.auto()
+            )
+            assert (
+                app.session.updated_at
+                == original_updated_at
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_selection_is_blocked_while_execution_is_busy() -> None:
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            original_screen = app.screen
+            original_mode = (
+                app.session.profile_mode
+            )
+
+            app._execution_busy = True
+
+            await pilot.press("f5")
+            await pilot.pause()
+
+            assert (
+                app.screen
+                is original_screen
+            )
+            assert not isinstance(
+                app.screen,
+                ProfileSelectionScreen,
+            )
+
+            assert (
+                app.session.profile_mode
+                == original_mode
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_profile_change_preserves_existing_conversation() -> None:
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ):
+            existing_turn = Turn(
+                user=DomainMessage(
+                    role=MessageRole.USER,
+                    content="Mensagem anterior",
+                ),
+                assistant=DomainMessage(
+                    role=MessageRole.ASSISTANT,
+                    content="Resposta anterior",
+                ),
+            )
+
+            app.session.conversation.append(
+                existing_turn
+            )
+
+            original_turns = (
+                app.session.conversation.turns
+            )
+
+            app._apply_profile_selection(
+                ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            assert (
+                app.session.profile_mode
+                == ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            assert (
+                app.session.conversation.turns
+                == original_turns
+            )
+
+            assert (
+                app.session.conversation.turns
+                == (existing_turn,)
+            )
+
+    asyncio.run(
+        scenario()
+    )
+
+
+def test_next_message_uses_new_explicit_profile(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class ExpectedExecutionStop(
+        RuntimeError
+    ):
+        pass
+
+    def fake_execute_session_message(
+        session,
+        current_message,
+        *,
+        updated_at,
+        store,
+    ):
+        captured["profile_mode"] = (
+            session.profile_mode
+        )
+        captured["message"] = (
+            current_message.content
+        )
+        captured["store"] = store
+
+        raise ExpectedExecutionStop(
+            "execução interrompida após captura"
+        )
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app."
+        "execute_session_message",
+        fake_execute_session_message,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp()
+
+        async with app.run_test(
+            size=(120, 40),
+        ) as pilot:
+            app._apply_profile_selection(
+                ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            composer = app.query_one(
+                "#composer",
+                ComposerTextArea,
+            )
+
+            composer.load_text(
+                "Crie um script para Unity"
+            )
+            composer.focus()
+
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.pause()
+
+            assert (
+                captured["profile_mode"]
+                == ProfileMode.explicit(
+                    "unity-dev"
+                )
+            )
+
+            assert (
+                captured["message"]
+                == "Crie um script para Unity"
+            )
+
+            assert (
+                captured["store"]
+                is app.session_store
+            )
+
+            assert isinstance(
+                app._last_execution_error,
+                ExpectedExecutionStop,
+            )
 
     asyncio.run(
         scenario()
