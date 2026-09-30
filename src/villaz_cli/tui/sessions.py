@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
+
+from villaz_cli.session import SessionLifecycle
+from villaz_cli.session_query import SessionSummary
+
+
+EMPTY_SESSIONS_MESSAGE = "Nenhuma sessão\nselecionada"
+SESSION_LOAD_ERROR_MESSAGE = "Não foi possível carregar as sessões salvas."
 
 
 class SessionListItem(Vertical):
@@ -11,6 +20,7 @@ class SessionListItem(Vertical):
     def __init__(
         self,
         *,
+        session_id: str,
         title: str,
         session_type: str,
         turn_count: int,
@@ -18,6 +28,7 @@ class SessionListItem(Vertical):
     ) -> None:
         super().__init__()
 
+        self.session_id = session_id
         self.session_title = title
         self.session_type = session_type
         self.turn_count = turn_count
@@ -59,7 +70,7 @@ class SessionListView(VerticalScroll):
 
     def compose(self) -> ComposeResult:
         yield Static(
-            "Nenhuma sessão\nselecionada",
+            EMPTY_SESSIONS_MESSAGE,
             id="sessions-empty-state",
             markup=False,
         )
@@ -67,6 +78,7 @@ class SessionListView(VerticalScroll):
     async def add_session(
         self,
         *,
+        session_id: str,
         title: str,
         session_type: str,
         turn_count: int,
@@ -76,6 +88,7 @@ class SessionListView(VerticalScroll):
             self._clear_selection()
 
         item = SessionListItem(
+            session_id=session_id,
             title=title,
             session_type=session_type,
             turn_count=turn_count,
@@ -94,6 +107,46 @@ class SessionListView(VerticalScroll):
         )
 
         return item
+
+    async def add_session_summary(
+        self,
+        summary: SessionSummary,
+    ) -> SessionListItem | None:
+        if summary.lifecycle is SessionLifecycle.DELETED:
+            return None
+
+        return await self.add_session(
+            session_id=summary.session_id,
+            title=f"Sessão {summary.session_id[:8]}",
+            session_type="persistente",
+            turn_count=summary.turn_count,
+        )
+
+    async def set_session_summaries(
+        self,
+        summaries: Iterable[SessionSummary],
+    ) -> None:
+        await self.clear_sessions()
+
+        for summary in summaries:
+            await self.add_session_summary(summary)
+
+    async def show_load_error(self) -> None:
+        await self.clear_sessions()
+        self.query_one(
+            "#sessions-empty-state",
+            Static,
+        ).update(SESSION_LOAD_ERROR_MESSAGE)
+
+    def get_session_item(
+        self,
+        session_id: str,
+    ) -> SessionListItem | None:
+        for item in self.query(SessionListItem):
+            if item.session_id == session_id:
+                return item
+
+        return None
 
     def select_session(
         self,
@@ -117,6 +170,7 @@ class SessionListView(VerticalScroll):
             Static,
         )
 
+        empty_state.update(EMPTY_SESSIONS_MESSAGE)
         empty_state.display = True
 
     def _clear_selection(self) -> None:

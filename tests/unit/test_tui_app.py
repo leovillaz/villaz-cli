@@ -1,8 +1,11 @@
 import asyncio
 import threading
 
-from datetime import timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static, TextArea, Input
 
@@ -11,7 +14,7 @@ from villaz_cli.tui.conversation import (
     ConversationMessage,
     ConversationView,
 )
-from villaz_cli.tui.sessions import SessionListView
+from villaz_cli.tui.sessions import SessionListItem, SessionListView
 from villaz_cli.tui.app import (
     MEDIUM_MIN_WIDTH,
     WIDE_MIN_WIDTH,
@@ -24,16 +27,21 @@ from villaz_cli.session import (
     PersistenceMode,
     ProfileMode,
     ProfileModeKind,
+    Session,
     SessionAuthority,
     SessionLifecycle,
 )
+from villaz_cli.session_state import session_to_state
+from villaz_cli.session_persistence import SessionStorageError
 from villaz_cli.tui.profile import (
     ProfileSelectionScreen,
 )
 from villaz_cli.session_stores import (
     EphemeralSessionStateStore,
 )
+from villaz_cli.session_query import SessionSummary
 from villaz_cli.conversation import (
+    LogicalConversationHistory,
     Message as DomainMessage,
     MessageRole,
     Turn,
@@ -43,6 +51,60 @@ from villaz_cli.http_client import (
     RouterConnectionError,
     RouterProtocolError,
 )
+
+class InMemorySessionStateStore:
+    def __init__(self) -> None:
+        self.states: dict[str, dict] = {}
+        self.list_calls = 0
+        self.load_calls = 0
+
+    def list_session_ids(self) -> tuple[str, ...]:
+        self.list_calls += 1
+        return tuple(self.states)
+
+    def load(self, *, session_id: str) -> dict:
+        self.load_calls += 1
+        return self.states[session_id]
+
+    def save(self, *, session_id: str, state: dict) -> None:
+        raise AssertionError(f"Unexpected save: {session_id}")
+
+    def purge(self, *, session_id: str) -> None:
+        raise AssertionError(f"Unexpected purge: {session_id}")
+
+
+@pytest.fixture(autouse=True)
+def isolated_persisted_session_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> InMemorySessionStateStore:
+    store = InMemorySessionStateStore()
+    monkeypatch.setattr(
+        "villaz_cli.tui.app.build_default_local_session_stores",
+        lambda: SimpleNamespace(
+            state_store=store,
+            lock_store=object(),
+        ),
+    )
+    return store
+
+
+def _summary(
+    session_id: str,
+    *,
+    updated_at: datetime,
+    lifecycle: SessionLifecycle = SessionLifecycle.ACTIVE,
+) -> SessionSummary:
+    return SessionSummary(
+        session_id=session_id,
+        lifecycle=lifecycle,
+        persistence_mode=PersistenceMode.PERSISTENT,
+        authority=SessionAuthority.LOCAL,
+        profile_mode=ProfileMode.auto(),
+        created_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        updated_at=updated_at,
+        turn_count=2,
+    )
+
 
 def _commit_fake_execution_turn(
     session,
@@ -1163,6 +1225,255 @@ def test_tui_uses_ephemeral_session_store() -> None:
         app.session_store,
         EphemeralSessionStateStore,
     )
+
+
+def test_tui_builds_local_stores_once_and_queries_on_mount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStateStore()
+    builder_calls = 0
+
+    def fake_builder() -> SimpleNamespace:
+        nonlocal builder_calls
+        builder_calls += 1
+        return SimpleNamespace(
+            state_store=store,
+            lock_store=object(),
+        )
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app.build_default_local_session_stores",
+        fake_builder,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp()
+
+        assert builder_calls == 1
+        assert app._persisted_session_store is store
+        assert app._persisted_session_summaries == ()
+        assert store.list_calls == 0
+
+        async with app.run_test(size=(160, 45)):
+            assert store.list_calls == 1
+            assert store.load_calls == 0
+            assert app._persisted_session_summaries == ()
+            assert isinstance(
+                app.session_store,
+                EphemeralSessionStateStore,
+            )
+
+        assert builder_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_tui_startup_uses_real_query_with_in_memory_persisted_state() -> None:
+    store = InMemorySessionStateStore()
+    created_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+    for session_id, updated_at in (
+        ("session-old", datetime(2026, 9, 27, tzinfo=timezone.utc)),
+        ("session-new", datetime(2026, 9, 28, tzinfo=timezone.utc)),
+    ):
+        persisted = Session(
+            session_id=session_id,
+            conversation=LogicalConversationHistory(),
+            persistence_mode=PersistenceMode.PERSISTENT,
+            authority=SessionAuthority.LOCAL,
+            profile_mode=ProfileMode.auto(),
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+        store.states[session_id] = session_to_state(persisted)
+
+    async def scenario() -> None:
+        app = VillazApp(persisted_session_store=store)
+        active_session = app.session
+
+        async with app.run_test(size=(160, 45)):
+            summaries = app._persisted_session_summaries
+            assert tuple(summary.session_id for summary in summaries) == (
+                "session-new",
+                "session-old",
+            )
+            assert all(isinstance(summary, SessionSummary) for summary in summaries)
+            assert store.list_calls == 1
+            assert store.load_calls == 2
+            assert app.session is active_session
+            assert app.session.persistence_mode is PersistenceMode.EPHEMERAL
+            items = tuple(
+                app.query_one("#sessions-panel", SessionListView).query(
+                    SessionListItem
+                )
+            )
+            assert tuple(item.session_id for item in items) == (
+                "session-new",
+                "session-old",
+            )
+            assert all(item.selected is False for item in items)
+            assert active_session.session_id not in (
+                item.session_id for item in items
+            )
+
+    asyncio.run(scenario())
+
+
+def test_tui_startup_keeps_persisted_summaries_separate_from_active_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStateStore()
+    newer = _summary(
+        "session-z-new",
+        updated_at=datetime(2026, 9, 28, tzinfo=timezone.utc),
+    )
+    older = _summary(
+        "session-a-old",
+        updated_at=datetime(2026, 9, 27, tzinfo=timezone.utc),
+    )
+    deleted = _summary(
+        "session-deleted",
+        updated_at=datetime(2026, 9, 27, tzinfo=timezone.utc),
+        lifecycle=SessionLifecycle.DELETED,
+    )
+    returned = (newer, deleted, older)
+    query_stores: list[InMemorySessionStateStore] = []
+
+    def fake_list_persisted_sessions(
+        *,
+        store: InMemorySessionStateStore,
+    ) -> tuple[SessionSummary, ...]:
+        query_stores.append(store)
+        return returned
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app.list_persisted_sessions",
+        fake_list_persisted_sessions,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp(persisted_session_store=store)
+        active_session = app.session
+        active_conversation = app.session.conversation
+        active_profile = app.session.profile_mode
+
+        assert app._persisted_session_summaries == ()
+        assert app.session.persistence_mode is PersistenceMode.EPHEMERAL
+        assert isinstance(app.session_store, EphemeralSessionStateStore)
+        assert app.session_store is not store
+
+        with (
+            patch("villaz_cli.session_persistence.load_session") as direct_load,
+            patch("villaz_cli.session_persistence.resume_session") as resume,
+            patch("villaz_cli.session_lock.acquire_session_lock") as acquire,
+            patch("villaz_cli.session_lock.release_session_lock") as release,
+        ):
+            async with app.run_test(size=(160, 45)):
+                assert query_stores == [store]
+                assert app._persisted_session_summaries is returned
+                assert app.session is active_session
+                assert app.session.conversation is active_conversation
+                assert app.session.conversation.turns == ()
+                assert app.session.profile_mode is active_profile
+                items = tuple(
+                    app.query_one("#sessions-panel", SessionListView).query(
+                        SessionListItem
+                    )
+                )
+                assert tuple(item.session_id for item in items) == (
+                    newer.session_id,
+                    older.session_id,
+                )
+                assert all(item.selected is False for item in items)
+                assert active_session.session_id not in (
+                    item.session_id for item in items
+                )
+                assert tuple(
+                    app.query_one("#conversation-panel", ConversationView).query(
+                        ConversationMessage
+                    )
+                ) == ()
+                context = app.query_one("#context-panel", ContextView)
+                assert context.mode == active_profile.kind.value
+                assert context.session_type == "efêmera"
+                assert context.turn_count == 0
+                assert context.profile is None
+
+            direct_load.assert_not_called()
+            resume.assert_not_called()
+            acquire.assert_not_called()
+            release.assert_not_called()
+
+        assert store.list_calls == 0
+        assert store.load_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_tui_startup_sanitizes_persisted_query_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStateStore()
+    query_stores: list[InMemorySessionStateStore] = []
+    sensitive = "/home/user/private/session.json secret-session-id"
+
+    def failing_query(
+        *,
+        store: InMemorySessionStateStore,
+    ) -> tuple[SessionSummary, ...]:
+        query_stores.append(store)
+        raise SessionStorageError(sensitive)
+
+    monkeypatch.setattr(
+        "villaz_cli.tui.app.list_persisted_sessions",
+        failing_query,
+    )
+
+    async def scenario() -> None:
+        app = VillazApp(persisted_session_store=store)
+        active_session = app.session
+        active_conversation = app.session.conversation
+        active_profile = app.session.profile_mode
+
+        async with app.run_test(size=(160, 45)) as pilot:
+            panel = app.query_one("#sessions-panel", SessionListView)
+            empty = panel.query_one("#sessions-empty-state", Static)
+            composer = app.query_one("#composer", ComposerTextArea)
+            conversation = app.query_one("#conversation-panel", ConversationView)
+            context = app.query_one("#context-panel", ContextView)
+
+            assert query_stores == [store]
+            assert app._persisted_session_summaries == ()
+            assert tuple(panel.query(SessionListItem)) == ()
+            assert empty.display is True
+            assert str(empty.render()) == (
+                "Não foi possível carregar as sessões salvas."
+            )
+            assert sensitive not in str(empty.render())
+            assert all(
+                sensitive not in str(widget.render())
+                for widget in app.query(Static)
+            )
+            assert composer.has_focus is True
+            assert app.session is active_session
+            assert app.session.persistence_mode is PersistenceMode.EPHEMERAL
+            assert app.session.conversation is active_conversation
+            assert app.session.conversation.turns == ()
+            assert app.session.profile_mode is active_profile
+            assert tuple(conversation.query(ConversationMessage)) == ()
+            assert context.mode == active_profile.kind.value
+            assert context.session_type == "efêmera"
+            assert context.turn_count == 0
+            assert context.profile is None
+
+            await pilot.press("f2")
+            assert panel.has_focus is True
+            await pilot.press("f6")
+            assert composer.has_focus is True
+            await pilot.pause()
+            assert query_stores == [store]
+
+    asyncio.run(scenario())
 
 
 def test_tui_context_reflects_real_session_state() -> None:

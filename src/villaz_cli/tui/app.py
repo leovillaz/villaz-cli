@@ -24,6 +24,12 @@ from villaz_cli.session_factory import (
 )
 from villaz_cli.session_stores import (
     EphemeralSessionStateStore,
+    build_default_local_session_stores,
+)
+from villaz_cli.session_persistence import SessionStateStore
+from villaz_cli.session_query import (
+    SessionSummary,
+    list_persisted_sessions,
 )
 from villaz_cli.conversation import (
     Message as ConversationMessage,
@@ -168,7 +174,11 @@ class VillazApp(App[None]):
         ),
     ]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        persisted_session_store: SessionStateStore | None = None,
+    ) -> None:
         super().__init__()
 
         created_at = datetime.now(
@@ -182,6 +192,15 @@ class VillazApp(App[None]):
         self.session_store = (
             EphemeralSessionStateStore()
         )
+
+        self._persisted_session_store = (
+            persisted_session_store
+            if persisted_session_store is not None
+            else build_default_local_session_stores().state_store
+        )
+        self._persisted_session_summaries: tuple[
+            SessionSummary, ...
+        ] = ()
 
         self._execution_busy = False
 
@@ -254,7 +273,7 @@ class VillazApp(App[None]):
             id="app-footer",
         )
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         self.apply_responsive_layout(
             self.size.width
         )
@@ -263,6 +282,26 @@ class VillazApp(App[None]):
             "#composer",
             ComposerTextArea,
         ).focus()
+
+        sessions = self.query_one(
+            "#sessions-panel",
+            SessionListView,
+        )
+
+        try:
+            self._refresh_persisted_session_summaries()
+        except Exception:
+            self._persisted_session_summaries = ()
+            await sessions.show_load_error()
+        else:
+            await sessions.set_session_summaries(
+                self._persisted_session_summaries
+            )
+
+    def _refresh_persisted_session_summaries(self) -> None:
+        self._persisted_session_summaries = list_persisted_sessions(
+            store=self._persisted_session_store,
+        )
 
     def apply_responsive_layout(
         self,
